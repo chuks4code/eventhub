@@ -24,40 +24,76 @@ function EventDetails() {
 
     // Track whether a booking is being created
     const [bookingLoading, setBookingLoading] = useState(false);
+    // Track whether the current user has already booked this event
+    const [alreadyBooked, setAlreadyBooked] = useState(false);
 
     // Store an error message if the event cannot be loaded
     const [error, setError] = useState("");
 
-    // Run this code whenever the event ID changes
+    // Load the event and check whether the user has already booked it
     useEffect(() => {
 
-        // Request the specific event from our Express backend
-        fetch(`http://localhost:5000/api/events/${id}`)
+        // Get the JWT saved when the user logged in
+        const token = localStorage.getItem("token");
 
-            // Check whether the backend request was successful
-            .then((response) => {
+        // Load the event details
+        const loadEvent = async () => {
 
-                if (!response.ok) {
+            try {
+
+                // Request the specific event from our Express backend
+                const eventResponse = await fetch(
+                    `http://localhost:5000/api/events/${id}`
+                );
+
+                // Check whether the event request was successful
+                if (!eventResponse.ok) {
                     throw new Error("Event not found");
                 }
 
-                // Convert the response into JavaScript data
-                return response.json();
-            })
+                // Convert the event response into JavaScript data
+                const eventData = await eventResponse.json();
 
-            // Store the event returned by the backend
-            .then((data) => {
+                // Store the event
+                setEvent(eventData);
 
-                setEvent(data);
+                // If the user is logged in, check their bookings
+                if (token) {
+
+                    // Request the current user's bookings
+                    const bookingsResponse = await fetch(
+                        "http://localhost:5000/api/bookings",
+                        {
+                            headers: {
+                                Authorization: `Bearer ${token}`
+                            }
+                        }
+                    );
+
+                    // Check whether the bookings request was successful
+                    if (bookingsResponse.ok) {
+
+                        // Convert bookings into JavaScript data
+                        const bookingsData = await bookingsResponse.json();
+
+                        // Check whether this event has a confirmed booking
+                        const hasBookedEvent = bookingsData.some(
+                            (booking) =>
+                                String(booking.event_id) === String(id) &&
+                                booking.status === "confirmed"
+                        );
+
+                        // Store the result
+                        setAlreadyBooked(hasBookedEvent);
+                    }
+                }
 
                 // Stop showing the loading message
                 setLoading(false);
-            })
 
-            // Handle errors if the request fails
-            .catch((error) => {
+            } catch (error) {
 
-                // Display the actual error in the browser console
+                // Display the technical error in the browser console
                 console.error(error);
 
                 // Display a user-friendly error message
@@ -65,77 +101,99 @@ function EventDetails() {
 
                 // Stop showing the loading message
                 setLoading(false);
-            });
+            }
+        };
 
-    }, [id]); // Run again if the event ID in the URL changes
+        // Run the function
+        loadEvent();
 
-            // Handle event booking
-        const handleBooking = async () => {
-            // Get the JWT saved when the user logged in
-            const token = localStorage.getItem("token");
+    }, [id]);
 
-            // Make sure the user is logged in
-            if (!token) {
-                setBookingMessage("Please login before booking an event.");
+            // Handle event payment and booking
+    const handleBooking = async () => {
+
+        // Get the JWT saved when the user logged in
+        const token = localStorage.getItem("token");
+
+        // Make sure the user is logged in
+        if (!token) {
+            setBookingMessage("Please login before booking an event.");
+            return;
+        }
+
+        // Make sure the ticket quantity is valid
+        if (quantity < 1) {
+            setBookingMessage("Please select at least 1 ticket.");
+            return;
+        }
+
+        // Clear any previous message
+        setBookingMessage("");
+
+        // Show the loading state
+        setBookingLoading(true);
+
+        try {
+
+            // Ask our backend to create a Stripe Checkout session
+            const response = await fetch(
+                "http://localhost:5000/api/payments/create-checkout-session",
+                {
+                    method: "POST",
+
+                    // Send the JWT so the backend knows which user
+                    // is creating the booking
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`
+                    },
+
+                    // Send the event and ticket quantity
+                    body: JSON.stringify({
+                        eventId: id,
+                        quantity: quantity
+                    })
+                }
+            );
+
+            // Convert the backend response into JavaScript data
+            const data = await response.json();
+
+            // Check whether the Checkout session was created
+            if (!response.ok) {
+                setBookingMessage(
+                    data.message || "Unable to start payment."
+                );
                 return;
             }
 
-            // Clear any previous booking message
-            setBookingMessage("");
-
-            // Show the booking loading state
-            setBookingLoading(true);
-
-            try {
-                // Send the booking request to our Express backend
-                const response = await fetch(
-                    "http://localhost:5000/api/bookings",
-                    {
-                        method: "POST",
-
-                        // Send the JWT and tell the backend we are sending JSON
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${token}`
-                        },
-
-                        // Send the event ID and number of tickets
-                        body: JSON.stringify({
-                            eventId: id,
-                            quantity: quantity
-                        })
-                    }
-                );
-
-                // Convert the backend response to JavaScript data
-                const data = await response.json();
-
-                // Check whether the booking was successful
-                if (!response.ok) {
-                    setBookingMessage(
-                        data.message || "Booking failed."
-                    );
-                    return;
-                }
-
-                // Show the successful booking message
+            // Make sure Stripe returned a Checkout URL
+            if (!data.url) {
                 setBookingMessage(
-                    "Booking created successfully!"
+                    "Stripe Checkout URL was not returned."
                 );
-
-            } catch (error) {
-                // Display the error in the browser console
-                console.error(error);
-
-                // Show a user-friendly error message
-                setBookingMessage(
-                    "Unable to connect to the server."
-                );
-            } finally {
-                // Stop the loading state
-                setBookingLoading(false);
+                return;
             }
-        };
+
+            // Send the user to Stripe Checkout
+            window.location.href = data.url;
+
+        } catch (error) {
+
+            // Display the technical error in the browser console
+            console.error(error);
+
+            // Show a user-friendly message
+            setBookingMessage(
+                "Unable to connect to the payment server."
+            );
+
+        } finally {
+
+            // Stop the loading state
+            setBookingLoading(false);
+        }
+    };
 
 
     // Show a loading message while waiting for the backend
@@ -231,48 +289,59 @@ function EventDetails() {
 
                     </div>
 
-                    {/* Ticket quantity selector */}
-                    <div className="booking-section">
+                    {/* Show booking controls only if the user has not already booked */}
+                        {!alreadyBooked && (
+                            <div className="booking-section">
 
-                        <label htmlFor="quantity">
-                            Number of Tickets
-                        </label>
+                                {/* Ticket quantity selector */}
+                                <label htmlFor="quantity">
+                                    Number of Tickets
+                                </label>
 
-                        <input
-                            id="quantity"
-                            type="number"
-                            min="1"
-                            value={quantity}
-                            onChange={(e) =>
-                                setQuantity(Number(e.target.value))
-                            }
-                        />
+                                <input
+                                    id="quantity"
+                                    type="number"
+                                    min="1"
+                                    value={quantity}
+                                    onChange={(e) =>
+                                        setQuantity(Number(e.target.value))
+                                    }
+                                />
 
-                        {/* Calculate and display the total price */}
-                        <p className="booking-total">
-                            Total: $
-                            {(Number(event.price) * quantity).toFixed(2)}
-                        </p>
+                                {/* Calculate and display the total price */}
+                                <p className="booking-total">
+                                    Total: $
+                                    {(Number(event.price) * quantity).toFixed(2)}
+                                </p>
 
-                        {/* Create the booking */}
-                        <button
-                            className="register-event-btn"
-                            onClick={handleBooking}
-                            disabled={bookingLoading}
-                        >
-                            {bookingLoading
-                                ? "Booking..."
-                                : "Register for Event"}
-                        </button>
+                                {/* Create the booking */}
+                                <button
+                                    className="register-event-btn"
+                                    onClick={handleBooking}
+                                    disabled={bookingLoading}
+                                >
+                                    {bookingLoading
+                                        ? "Preparing Payment..."
+                                        : "Pay & Book"}
+                                </button>
 
-                        {/* Display booking result */}
-                        {bookingMessage && (
-                            <p className="booking-message">
-                                {bookingMessage}
-                            </p>
+                                {/* Display payment or booking result */}
+                                {bookingMessage && (
+                                    <p className="booking-message">
+                                        {bookingMessage}
+                                    </p>
+                                )}
+
+                            </div>
                         )}
 
-                    </div>
+                        {/* Tell the user when they have already booked this event */}
+                        {alreadyBooked && (
+                            <p className="booking-message">
+                                ✓ You have already booked this event.
+                            </p>
+                        )}
+                    
 
                 </div>
 

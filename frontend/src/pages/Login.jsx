@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 // Import Link for navigation between pages
 import { Link, useNavigate } from "react-router-dom";
 
-function Login() {
+function Login({ onLogin }) {
 
     // Store the email entered by the user
     const [email, setEmail] = useState("");
@@ -56,6 +56,14 @@ function Login() {
                     "user",
                     JSON.stringify(data.user)
                 );
+
+                // Tell CartContext that a new user has logged in
+                window.dispatchEvent(
+                    new Event("eventhub-auth-changed")
+                );
+
+                // Tell App.jsx that the user is now logged in
+                onLogin();
 
                 // Redirect the user to the homepage
                 navigate("/");
@@ -144,18 +152,25 @@ function Login() {
             }
 
 
-            // Store the JWT token in the browser
-            localStorage.setItem("token", data.token);
+           // Store the JWT token in the browser
+                localStorage.setItem("token", data.token);
 
-            // Store the logged-in user's information
-            localStorage.setItem(
-                "user",
-                JSON.stringify(data.user)
-            );
+                // Store the logged-in user's information
+                localStorage.setItem(
+                    "user",
+                    JSON.stringify(data.user)
+                );
 
+                // Tell CartContext that a new user has logged in
+                window.dispatchEvent(
+                    new Event("eventhub-auth-changed")
+                );
 
-            // Redirect the user back to the home page
-            navigate("/");
+                // Tell App.jsx that the user is now logged in
+                onLogin();
+
+                // Redirect the user back to the home page
+                navigate("/");
 
         } catch (error) {
 

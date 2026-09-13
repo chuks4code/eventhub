@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react"; // Import React hooks for state and running code
 import { Link } from "react-router-dom";
+// Import the cart functions
+import { useCart } from "../CartContext.jsx";
 
 function Home() {
+     // Get the function used to add events to the cart
+    const { addToCart } = useCart();
     const [events, setEvents] = useState([]); // Store the events received from the server
     const [loading, setLoading] = useState(true); // Keep track of whether events are still loading
     const [error, setError] = useState(""); // Store an error message if loading events fails
@@ -101,10 +105,15 @@ function Home() {
 
                                     <div className="event-footer">
 
-                                        <strong>
-                                            ${Number(event.price).toFixed(2)} {/* Convert price to a number and show 2 decimal places */}
-                                        </strong>
+                                    {/* Display the event price */}
+                                    <strong>
+                                        ${Number(event.price).toFixed(2)}
+                                    </strong>
 
+                                    {/* Container for event actions */}
+                                    <div className="event-actions">
+
+                                        {/* Open the full event details */}
                                         <Link
                                             to={`/events/${event.id}`}
                                             className="view-event-btn"
@@ -112,7 +121,18 @@ function Home() {
                                             View Event
                                         </Link>
 
+                                        {/* Add this event to the cart */}
+                                        <button
+                                            type="button"
+                                            className="add-cart-btn"
+                                            onClick={() => addToCart(event)}
+                                        >
+                                            Add to Cart
+                                        </button>
+
                                     </div>
+
+                                </div>
 
                                 </div>
 

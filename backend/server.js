@@ -5,6 +5,7 @@ const cors = require("cors");             // Import CORS
 require("dotenv").config();               // Load variables from .env
 
 const pool = require("./db/database");      // Import the database connection pool for current file to use
+const Stripe = require("stripe");
 
 const bcrypt = require("bcryptjs");       // Hash and verify passwords
 const jwt = require("jsonwebtoken");        // Create and verify JWT tokens
@@ -14,11 +15,161 @@ const googleClient = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID
 );
 
+// Create a Stripe client using the secret key stored in .env
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 
 const app = express();                    // Create Express application
 
-app.use(cors());                          // Enable CORS
-app.use(express.json());                  // Allow JSON request data
+
+ // Enable CORS
+app.use(cors());
+
+// ==========================================
+// STRIPE WEBHOOK
+// ==========================================
+
+// Stripe webhook must receive the raw request body
+app.post(
+    "/api/payments/webhook",
+    express.raw({ type: "application/json" }),
+    async (req, res) => {
+
+        // Get the Stripe signature from the request
+        const signature = req.headers["stripe-signature"];
+
+        try {
+
+            // Verify that the webhook actually came from Stripe
+            const event = stripe.webhooks.constructEvent(
+                req.body,
+                signature,
+                process.env.STRIPE_WEBHOOK_SECRET
+            );
+
+            // Handle a successful Stripe Checkout payment
+            if (event.type === "checkout.session.completed") {
+
+                // Get the Stripe Checkout session
+                const session = event.data.object;
+
+                // Make sure the payment was actually completed
+                if (session.payment_status !== "paid") {
+
+                    console.log(
+                        "Checkout completed, but payment is not marked as paid."
+                    );
+
+                    return res.json({
+                        received: true
+                    });
+                }
+
+                // ------------------------------------------
+                // GET BOOKING IDs FROM STRIPE METADATA
+                // ------------------------------------------
+
+                let bookingIds = [];
+
+                // New cart checkout stores multiple booking IDs
+                if (session.metadata.bookingIds) {
+
+                    // Convert:
+                    // "12,13,14"
+                    //
+                    // into:
+                    // ["12", "13", "14"]
+
+                    bookingIds =
+                        session.metadata.bookingIds
+                            .split(",")
+                            .filter(Boolean);
+
+                }
+
+                // Support the existing single-event checkout
+                // that stores only one booking ID
+                else if (session.metadata.bookingId) {
+
+                    bookingIds = [
+                        session.metadata.bookingId
+                    ];
+                }
+
+                // Make sure we actually received booking IDs
+                if (bookingIds.length === 0) {
+
+                    console.log(
+                        "No booking IDs found in Stripe metadata."
+                    );
+
+                    return res.json({
+                        received: true
+                    });
+                }
+
+                // Convert booking IDs from strings to numbers
+                const numericBookingIds =
+                    bookingIds.map(Number);
+
+                // ------------------------------------------
+                // CONFIRM ALL BOOKINGS
+                // ------------------------------------------
+
+                const bookingResult = await pool.query(
+                    `UPDATE bookings
+                     SET status = 'confirmed'
+                     WHERE id = ANY($1::int[])
+                     AND status = 'pending'
+                     RETURNING id`,
+                    [numericBookingIds]
+                );
+
+                // Display which bookings were confirmed
+                if (bookingResult.rows.length > 0) {
+
+                    const confirmedIds =
+                        bookingResult.rows.map(
+                            (booking) => booking.id
+                        );
+
+                    console.log(
+                        `Bookings confirmed successfully: ${confirmedIds.join(", ")}`
+                    );
+
+                } else {
+
+                    console.log(
+                        "No pending bookings were found to confirm."
+                    );
+                }
+            }
+
+            // Tell Stripe that the webhook was received
+            // successfully
+            res.json({
+                received: true
+            });
+
+        } catch (error) {
+
+            // Display the webhook error in the backend console
+            console.error(
+                "Webhook error:",
+                error.message
+            );
+
+            // Tell Stripe the webhook failed
+            res.status(400).send(
+                `Webhook Error: ${error.message}`
+            );
+        }
+    }
+);
+
+// Normal JSON requests ,Allow JSON request data
+app.use(express.json());
+
 
 // Authentication middleware
 function authenticateToken(req, res, next) {
@@ -333,6 +484,9 @@ app.post("/api/auth/login", async (req, res) => {
 
         const user = result.rows[0]; // Get user from database
 
+
+        
+
         const passwordMatch = await bcrypt.compare( // Compare passwords
             password,
             user.password_hash
@@ -562,6 +716,452 @@ app.post("/api/bookings", authenticateToken, async (req, res) => {
         });
     }
 });
+
+
+// Create a Stripe Checkout session for an event booking
+app.post(
+    "/api/payments/create-checkout-session",
+    authenticateToken,
+    async (req, res) => {
+
+        try {
+            const { eventId, quantity } = req.body;
+            const userId = req.user.userId;
+
+            // Validate the event ID
+            if (!eventId) {
+                return res.status(400).json({
+                    message: "Event ID is required"
+                });
+            }
+
+            // Validate the ticket quantity
+            if (!quantity || quantity < 1) {
+                return res.status(400).json({
+                    message: "Quantity must be at least 1"
+                });
+            }
+
+            // Get the event from PostgreSQL
+            const eventResult = await pool.query(
+                `SELECT id, title, description, price, capacity
+                 FROM events
+                 WHERE id = $1`,
+                [eventId]
+            );
+
+            if (eventResult.rows.length === 0) {
+                return res.status(404).json({
+                    message: "Event not found"
+                });
+            }
+
+            const event = eventResult.rows[0];
+
+            // Check whether this user already has a booking
+            const existingBookingResult = await pool.query(
+                `SELECT id, quantity, status
+                 FROM bookings
+                 WHERE user_id = $1
+                 AND event_id = $2`,
+                [userId, eventId]
+            );
+
+            const existingBooking = existingBookingResult.rows[0];
+
+            // Do not allow another payment for an already confirmed booking
+            if (existingBooking && existingBooking.status === "confirmed") {
+                return res.status(400).json({
+                    message: "You have already booked this event"
+                });
+            }
+
+            // Calculate how many tickets are already reserved.
+            // If there is an existing pending booking, exclude it because
+            // we may be updating its quantity below.
+            const bookingResult = await pool.query(
+                `SELECT COALESCE(SUM(quantity), 0) AS booked_quantity
+                 FROM bookings
+                 WHERE event_id = $1
+                 AND status != 'cancelled'
+                 AND id != COALESCE($2, 0)`,
+                [eventId, existingBooking ? existingBooking.id : null]
+            );
+
+            const bookedQuantity = Number(
+                bookingResult.rows[0].booked_quantity
+            );
+
+            // Make sure there are enough tickets available
+            if (bookedQuantity + Number(quantity) > Number(event.capacity)) {
+                return res.status(400).json({
+                    message: "Not enough spots available"
+                });
+            }
+
+            let bookingId;
+           
+
+            // If a pending booking already exists, update it
+            if (existingBooking && existingBooking.status === "pending") {
+
+                const totalAmount =
+                    Number(event.price) * Number(quantity);
+
+                await pool.query(
+                    `UPDATE bookings
+                     SET quantity = $1,
+                         total_amount = $2
+                     WHERE id = $3`,
+                    [
+                        quantity,
+                        totalAmount,
+                        existingBooking.id
+                    ]
+                );
+
+                bookingId = existingBooking.id;
+
+            } else {
+
+                // Create a new pending booking before sending
+                // the customer to Stripe Checkout
+                const totalAmount =
+                    Number(event.price) * Number(quantity);
+
+                const bookingInsert = await pool.query(
+                    `INSERT INTO bookings
+                     (user_id, event_id, quantity, total_amount, status)
+                     VALUES ($1, $2, $3, $4, 'pending')
+                     RETURNING id`,
+                    [
+                        userId,
+                        eventId,
+                        quantity,
+                        totalAmount
+                    ]
+                );
+
+                bookingId = bookingInsert.rows[0].id;
+               
+            }
+
+            // Create the Stripe Checkout session
+            const session = await stripe.checkout.sessions.create({
+                mode: "payment",
+
+                line_items: [
+                    {
+                        price_data: {
+                            currency: "cad",
+
+                            product_data: {
+                                name: event.title,
+                                description: event.description
+                            },
+
+                            // Stripe expects the amount in cents
+                            unit_amount: Math.round(
+                                Number(event.price) * 100
+                            )
+                        },
+
+                        quantity: Number(quantity)
+                    }
+                ],
+
+                success_url:
+                    "http://localhost:5173/payment-success",
+
+                cancel_url:
+                    `http://localhost:5173/events/${eventId}`,
+
+                metadata: {
+                    // This lets the webhook identify the exact booking
+                    bookingId: String(bookingId),
+
+                    userId: String(userId),
+
+                    eventId: String(eventId),
+
+                    quantity: String(quantity)
+                }
+            });
+
+            // Send the Stripe Checkout URL back to React
+            res.json({
+                url: session.url
+            });
+
+        } catch (error) {
+
+            console.error(error);
+
+            res.status(500).json({
+                message: "Failed to create Stripe Checkout session"
+            });
+        }
+    }
+);
+
+  // ==========================================
+// CREATE STRIPE CHECKOUT FOR ENTIRE CART
+// ==========================================
+
+app.post(
+    "/api/payments/create-cart-checkout-session",
+    authenticateToken,
+    async (req, res) => {
+
+        try {
+
+            // Get the cart items sent from React
+            const { items } = req.body;
+
+            // Get the logged-in user's ID from the JWT
+            const userId = req.user.userId;
+
+            // Make sure the cart contains items
+            if (!Array.isArray(items) || items.length === 0) {
+                return res.status(400).json({
+                    message: "Your cart is empty"
+                });
+            }
+
+            // Store Stripe products for this checkout session
+            const lineItems = [];
+
+            // Store the booking IDs that will be connected
+            // to this Stripe payment
+            const bookingIds = [];
+
+            // Process every event in the cart
+            for (const item of items) {
+
+                // Get the event ID and quantity
+                const { eventId, quantity } = item;
+
+                // Validate the event ID
+                if (!eventId) {
+                    return res.status(400).json({
+                        message: "Event ID is required"
+                    });
+                }
+
+                // Validate the quantity
+                if (!quantity || quantity < 1) {
+                    return res.status(400).json({
+                        message: "Ticket quantity must be at least 1"
+                    });
+                }
+
+                // Get the real event information from PostgreSQL
+                const eventResult = await pool.query(
+                    `SELECT
+                        id,
+                        title,
+                        description,
+                        price,
+                        capacity
+                     FROM events
+                     WHERE id = $1`,
+                    [eventId]
+                );
+
+                // Make sure the event still exists
+                if (eventResult.rows.length === 0) {
+                    return res.status(404).json({
+                        message: `Event ${eventId} not found`
+                    });
+                }
+
+                const event = eventResult.rows[0];
+
+                // Check whether this user already has a booking
+                const existingBookingResult = await pool.query(
+                    `SELECT id, quantity, status
+                     FROM bookings
+                     WHERE user_id = $1
+                     AND event_id = $2`,
+                    [userId, eventId]
+                );
+
+                const existingBooking =
+                    existingBookingResult.rows[0];
+
+                // Do not allow the user to purchase an event
+                // that they have already successfully booked
+                if (
+                    existingBooking &&
+                    existingBooking.status === "confirmed"
+                ) {
+                    return res.status(400).json({
+                        message:
+                            `You have already booked "${event.title}"`
+                    });
+                }
+
+                // Calculate how many tickets are already reserved
+                // by other bookings
+                const bookingResult = await pool.query(
+                    `SELECT COALESCE(SUM(quantity), 0)
+                        AS booked_quantity
+                     FROM bookings
+                     WHERE event_id = $1
+                     AND status != 'cancelled'
+                     AND id != COALESCE($2, 0)`,
+                    [
+                        eventId,
+                        existingBooking
+                            ? existingBooking.id
+                            : null
+                    ]
+                );
+
+                const bookedQuantity = Number(
+                    bookingResult.rows[0].booked_quantity
+                );
+
+                // Make sure enough tickets are available
+                if (
+                    bookedQuantity + Number(quantity)
+                    > Number(event.capacity)
+                ) {
+                    return res.status(400).json({
+                        message:
+                            `Not enough spots available for "${event.title}"`
+                    });
+                }
+
+                // Calculate the booking total
+                const totalAmount =
+                    Number(event.price) * Number(quantity);
+
+                let bookingId;
+
+                // If the user already has a pending booking,
+                // update it instead of creating a duplicate
+                if (
+                    existingBooking &&
+                    existingBooking.status === "pending"
+                ) {
+
+                    await pool.query(
+                        `UPDATE bookings
+                         SET quantity = $1,
+                             total_amount = $2
+                         WHERE id = $3`,
+                        [
+                            quantity,
+                            totalAmount,
+                            existingBooking.id
+                        ]
+                    );
+
+                    bookingId = existingBooking.id;
+
+                } else {
+
+                    // Create a new pending booking
+                    const bookingInsert = await pool.query(
+                        `INSERT INTO bookings
+                            (
+                                user_id,
+                                event_id,
+                                quantity,
+                                total_amount,
+                                status
+                            )
+                         VALUES ($1, $2, $3, $4, 'pending')
+                         RETURNING id`,
+                        [
+                            userId,
+                            eventId,
+                            quantity,
+                            totalAmount
+                        ]
+                    );
+
+                    bookingId = bookingInsert.rows[0].id;
+                }
+
+                // Save the booking ID so the webhook
+                // can confirm it after payment
+                bookingIds.push(String(bookingId));
+
+                // Add this event to the Stripe Checkout
+                lineItems.push({
+                    price_data: {
+
+                        // Charge the customer in Canadian dollars
+                        currency: "cad",
+
+                        product_data: {
+                            name: event.title,
+                            description: event.description
+                        },
+
+                        // Stripe expects the price in cents
+                        unit_amount: Math.round(
+                            Number(event.price) * 100
+                        )
+                    },
+
+                    // Number of tickets
+                    quantity: Number(quantity)
+                });
+            }
+
+            // Create ONE Stripe Checkout session
+            // containing all events in the cart
+            const session =
+                await stripe.checkout.sessions.create({
+
+                    mode: "payment",
+
+                    // Send all cart events to Stripe
+                    line_items: lineItems,
+
+                    // Return the customer to EventHub
+                    // after successful payment
+                    success_url:
+                        "http://localhost:5173/payment-success",
+
+                    // Return the customer to the cart
+                    // if they cancel payment
+                    cancel_url:
+                        "http://localhost:5173/cart",
+
+                    // Store all booking IDs in Stripe metadata
+                    // separated by commas
+                    metadata: {
+                        bookingIds:
+                            bookingIds.join(","),
+                        userId: String(userId)
+                    }
+                });
+
+            // Send the Stripe Checkout URL back to React
+            res.json({
+                url: session.url
+            });
+
+        } catch (error) {
+
+            // Display the technical error in the backend console
+            console.error(
+                "Cart checkout error:",
+                error
+            );
+
+            // Send a user-friendly error
+            res.status(500).json({
+                message:
+                    "Failed to create cart checkout session"
+            });
+        }
+    }
+);
 
 // ==========================================
 // GET LOGGED-IN USER'S BOOKINGS
