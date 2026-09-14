@@ -196,6 +196,44 @@ function authenticateToken(req, res, next) {
     });
 }
 
+// Only allow users with the organizer role
+async function requireOrganizer(req, res, next) {
+
+    try {
+
+        // Get the logged-in user's role from the database
+        const result = await pool.query(
+            "SELECT role FROM users WHERE id = $1",
+            [req.user.userId]
+        );
+
+        // Make sure the user exists
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        // Check whether the logged-in user is an organizer
+        if (result.rows[0].role !== "organizer") {
+            return res.status(403).json({
+                message: "Organizer access required"
+            });
+        }
+
+        // User is an organizer, so continue
+        next();
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({
+            message: "Failed to verify organizer access"
+        });
+    }
+}
+
 // Protected route
 app.get("/api/auth/me", authenticateToken, async (req, res) => {
     try {
@@ -294,25 +332,21 @@ app.get("/api/events/:id", async (req, res) => { // Define GET endpoint with eve
 });
 
 
-// Create a new event
-app.post("/api/events", async (req, res) => { // Define POST endpoint for creating a new event
-    try {
-        const { // Extract event information from the request body
-            title, // Event title
-            description, // Event description
-            location, // Event location
-            event_date, // Date and time of the event
-            price, // Event price
-            capacity, // Maximum number of attendees
-            image_url // URL of the event image
-        } = req.body; // Get the submitted data from the client
+// ==========================================
+// CREATE A NEW EVENT
+// ==========================================
 
-         const result = await pool.query(
-            `INSERT INTO events
-            (title, description, location, event_date, price, capacity, image_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING *`,
-            [
+// Any logged-in user can create events
+app.post(
+    "/api/events",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            //  Get the logged-in user's ID from the JWT
+            const userId = req.user.userId;
+
+            // Extract event information from the request body
+            const {
                 title,
                 description,
                 location,
@@ -320,101 +354,224 @@ app.post("/api/events", async (req, res) => { // Define POST endpoint for creati
                 price,
                 capacity,
                 image_url
-            ]
-        );
+            } = req.body;
 
-        res.status(201).json(result.rows[0]); // Return the newly created event with HTTP 201 Created
+            // Create the event and save who created it
+            const result = await pool.query(
+                `INSERT INTO events
+                (
+                    title,
+                    description,
+                    location,
+                    event_date,
+                    price,
+                    capacity,
+                    image_url,
+                    created_by
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING *`,
+                [
+                    title,
+                    description,
+                    location,
+                    event_date,
+                    price,
+                    capacity,
+                    image_url,
+                    userId
+                ]
+            );
 
-    } catch (error) {
-        console.error(error); // Log the database or server error
+            // Return the newly created event
+            res.status(201).json(result.rows[0]);
 
-        res.status(500).json({ // Return HTTP 500 Internal Server Error
-            message: "Failed to create event" // Send an error message to the client
-        });
+        } catch (error) {
+            // Log the database or server error
+            console.error(error);
+
+            // Return an error response
+            res.status(500).json({
+                message: "Failed to create event"
+            });
+        }
     }
-});
+);
 
-// Update an event
-app.put("/api/events/:id", async (req, res) => {
-    try {
-        const { id } = req.params; // Get the event ID from the URL
-        const {
-            title,
-            description,
-            location,
-            event_date,
-            price,
-            capacity,
-            image_url
-        } = req.body;
+// ==========================================
+// GET USER'S EVENTS
+// ==========================================
 
-        const result = await pool.query(
-            `UPDATE events
-             SET title = $1,
-                 description = $2,
-                 location = $3,
-                 event_date = $4,
-                 price = $5,
-                 capacity = $6,
-                 image_url = $7
-             WHERE id = $8
-             RETURNING *`,
-            [
+// Only logged-in users can view their own events
+app.get(
+    "/api/organizer/events",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            // Get the organizer's ID from the JWT
+            const userId = req.user.userId;
+
+            // Get only events created by this organizer
+            const result = await pool.query(
+                `SELECT *
+                 FROM events
+                 WHERE created_by = $1
+                 ORDER BY event_date ASC`,
+                [userId]
+            );
+
+            // Return the organizer's events
+            res.json(result.rows);
+
+        } catch (error) {
+            // Display the error in the backend console
+            console.error(error);
+
+            // Return a server error
+            res.status(500).json({
+                message: "Failed to retrieve organizer events"
+            });
+        }
+    }
+);
+
+// ==========================================
+// UPDATE USER'S EVENT
+// ==========================================
+
+// Only logged-in users can update events
+app.put(
+    "/api/events/:id",
+    authenticateToken,
+    async (req, res) => {
+        try {
+            // Get the event ID from the URL
+            const { id } = req.params;
+
+            // Get the logged-in user's ID from the JWT
+            const userId = req.user.userId;
+
+            // Get the updated event information
+            const {
                 title,
                 description,
                 location,
                 event_date,
                 price,
                 capacity,
-                image_url,
-                id
-            ]
-        );
+                image_url
+            } = req.body;
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                message: "Event not found"
+            // Update the event only if it belongs
+            // to the logged-in user
+            const result = await pool.query(
+                `UPDATE events
+                 SET title = $1,
+                     description = $2,
+                     location = $3,
+                     event_date = $4,
+                     price = $5,
+                     capacity = $6,
+                     image_url = $7
+                 WHERE id = $8
+                 AND created_by = $9
+                 RETURNING *`,
+                [
+                    title,
+                    description,
+                    location,
+                    event_date,
+                    price,
+                    capacity,
+                    image_url,
+                    id,
+                    userId
+                ]
+            );
+
+            // Check whether the event exists
+            // and belongs to this user
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    message:
+                        "Event not found or you do not own this event"
+                });
+            }
+
+            // Return the updated event
+            res.json(result.rows[0]);
+
+        } catch (error) {
+            // Display the error in the backend console
+            console.error(error);
+
+            // Return a server error
+            res.status(500).json({
+                message: "Failed to update event"
             });
         }
-
-        res.json(result.rows[0]);
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            message: "Failed to update event"
-        });
     }
-});
+);
 
-// Delete an event
-app.delete("/api/events/:id", async (req, res) => {
-    try {
-        const { id } = req.params; // Get the event ID from the URL
 
-        const result = await pool.query(
-            "DELETE FROM events WHERE id = $1 RETURNING *",
-            [id]
-        );
+// ==========================================
+// DELETE USER'S EVENT
+// ==========================================
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                message: "Event not found"
+// Only logged-in userss can delete events
+app.delete(
+    "/api/events/:id",
+    authenticateToken,
+    async (req, res) => {
+
+        try {
+
+            // Get the event ID from the URL
+            const { id } = req.params;
+
+            // Get the logged-in user's ID from the JWT
+            const userId = req.user.userId;
+
+            // Delete the event only if it belongs
+            // to the logged-in user
+            const result = await pool.query(
+                `DELETE FROM events
+                 WHERE id = $1
+                 AND created_by = $2
+                 RETURNING *`,
+                [
+                    id,
+                    userId
+                ]
+            );
+
+            // Check whether the event exists
+            // and belongs to this organizer
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    message:
+                        "Event not found or you do not own this event"
+                });
+            }
+
+            // Return a success message
+            res.json({
+                message: "Event deleted successfully",
+                event: result.rows[0]
+            });
+
+        } catch (error) {
+
+            // Display the error in the backend console
+            console.error(error);
+
+            // Return a server error
+            res.status(500).json({
+                message: "Failed to delete event"
             });
         }
-
-        res.json({
-            message: "Event deleted successfully",
-            event: result.rows[0]
-        });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            message: "Failed to delete event"
-        });
     }
-});
+);
 
 // Register a new user
 app.post("/api/auth/register", async (req, res) => {

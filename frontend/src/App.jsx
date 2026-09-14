@@ -17,6 +17,9 @@ import MyBookings from "./pages/MyBookings";
 import PaymentSuccess from "./pages/PaymentSuccess";
 // Import the shopping cart page
 import Cart from "./pages/Cart";
+import CreateEvent from "./pages/CreateEvent";
+import OrganizerDashboard from "./pages/OrganizerDashboard";
+import EditEvent from "./pages/EditEvent";
 
 // Import application styles
 import "./App.css";
@@ -73,6 +76,13 @@ function App() {
                         {isLoggedIn && (
                             <Link to="/cart">
                                 🛒 Cart ({cartItemCount})
+                            </Link>
+                        )}
+
+                       {/* Show My Events when the user is logged in */}
+                        {isLoggedIn && (
+                            <Link to="/organizer">
+                               Create Event
                             </Link>
                         )}
 
@@ -168,6 +178,33 @@ function App() {
 
                 {/* Strip Payment Success */}
                 <Route path="/payment-success" element={<PaymentSuccess />} />
+
+                <Route
+                    path="/create-event"
+                    element={<CreateEvent />}
+                />
+
+                <Route
+                    path="/organizer"
+                    element={
+                        isLoggedIn ? (
+                            <OrganizerDashboard />
+                        ) : (
+                            <Navigate to="/login" replace />
+                        )
+                    }
+                />
+
+                <Route
+                    path="/organizer/edit/:id"
+                    element={
+                        isLoggedIn ? (
+                            <EditEvent />
+                        ) : (
+                            <Navigate to="/login" replace />
+                        )
+                    }
+                />
 
             </Routes>
 
