@@ -4,21 +4,22 @@ import { useEffect } from "react";
 // Import Link for navigation
 import { Link } from "react-router-dom";
 
-// Import the cart functions
+// Import cart functions
 import { useCart } from "../CartContext.jsx";
 
 function PaymentSuccess() {
 
-    // Get the function that empties the current user's cart
+    // Get the function used to clear the current user's cart
     const { clearCart } = useCart();
 
-    // Clear the cart when the payment-success page loads
     useEffect(() => {
 
-        // Remove all items from the current user's cart
+        // Clear the cart after successful payment
         clearCart();
 
-    }, [clearCart]);
+        // We only want to clear the cart once when this page loads
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
 
@@ -26,17 +27,22 @@ function PaymentSuccess() {
 
             <div className="payment-success-card">
 
-                {/* Confirmation message shown after Stripe redirects back */}
-                <div className="success-icon">✓</div>
+                {/* Payment success icon */}
+                <div className="success-icon">
+                    ✓
+                </div>
 
-                <h1>Payment Successful!</h1>
+                {/* Success message */}
+                <h1>
+                    Payment Successful!
+                </h1>
 
                 <p>
                     Your payment was completed successfully.
                     Your event booking is being confirmed.
                 </p>
 
-                {/* Take the user back to their bookings */}
+                {/* Go to My Bookings */}
                 <Link
                     to="/bookings"
                     className="success-btn"
@@ -44,7 +50,7 @@ function PaymentSuccess() {
                     View My Bookings
                 </Link>
 
-                {/* Allow the user to continue browsing events */}
+                {/* Go back to the Events page */}
                 <Link
                     to="/"
                     className="success-secondary-btn"

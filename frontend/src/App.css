@@ -846,3 +846,38 @@ footer {
 .add-cart-btn:active {
     transform: scale(0.94);
 }
+/* ==========================
+   MY BOOKINGS SECTION TITLES
+========================== */
+
+.bookings-section-title {
+    margin-top: 30px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+/* ==========================
+   MY BOOKINGS VIEW BUTTON
+========================== */
+
+.booking-content .view-event-btn {
+    margin: 15px auto 0;
+}
+
+/* ==========================
+   BOOKING SEPARATORS
+========================== */
+
+.booking-card + .booking-card .booking-content {
+    position: relative;
+    padding-top: 25px;
+    margin-top: 25px;
+}
+
+.booking-card + .booking-card .booking-content::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 20%;
+    width: 60%;
+    border-top: 1px solid #ddd;
+}

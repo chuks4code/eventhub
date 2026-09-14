@@ -30,6 +30,11 @@ function Home() {
             });
     }, []); // Run only once when the Home page first loads
 
+    // Only show events that have not happened yet
+        const upcomingEvents = events.filter(
+            (event) => new Date(event.event_date) > new Date()
+        );
+
     return (
         <>
             <section className="hero">
@@ -69,7 +74,7 @@ function Home() {
                 {!loading && !error && ( // If we are NOT loading AND there is NO error, show the events
                     <div className="events-grid">
 
-                        {events.map((event) => ( // Go through each event and create an event card
+                        {upcomingEvents.map((event) => ( // Go through each event and create an event card
 
                             <div
                                 className="event-card"
