@@ -1,16 +1,132 @@
-# React + Vite
+# EventHub — Full-Stack Event Booking Platform
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+EventHub is a full-stack event booking and management platform that allows users to discover events, create and manage their own events, book tickets, add events to a personalized shopping cart, and securely complete payments through Stripe.
 
-Currently, two official plugins are available:
+The project was built to demonstrate practical full-stack development skills including REST API development, authentication, database design, authorization, payment integration, frontend development, and secure handling of user data.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 🚀 Project Overview
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+EventHub provides an end-to-end event management and ticket booking experience.
 
-## Expanding the ESLint configuration
+Users can:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Browse available events
+- View detailed event information
+- Create their own events
+- Edit events they created
+- Delete their own events
+- Add event tickets to a personal shopping cart
+- Manage ticket quantities
+- Complete payments through Stripe Sandbox
+- View their bookings
+- Sign in using email/password or Google
+- Access their account securely using JWT authentication
+
+The application uses ownership-based authorization so users can manage their own events without being able to modify events created by other users.
+
+---
+
+## 📸 Application Screenshots
+
+### Event Discovery
+
+![EventHub Events Page](screenshots/events-page.png)
+
+### Event Details
+
+![EventHub Event Details](screenshots/event-details.png)
+
+### My Events
+
+![EventHub My Events](screenshots/my-events.png)
+
+### Shopping Cart
+
+![EventHub Shopping Cart](screenshots/shopping-cart.png)
+
+## 🎯 Project Goals
+
+---
+
+The main goals of EventHub were to build a realistic full-stack application that demonstrates:
+
+- Frontend and backend integration
+- RESTful API design
+- Relational database design
+- Secure authentication
+- Authorization and resource ownership
+- Third-party API integration
+- Payment processing
+- Webhook handling
+- User-specific application data
+- CRUD operations
+- Error handling
+- Responsive UI design
+- Environment variable and secret management
+
+---
+
+## 🛠️ Technology Stack
+
+### Frontend
+
+- React
+- Vite
+- React Router
+- JavaScript
+- CSS
+- Fetch API
+- Local Storage
+
+### Backend
+
+- Node.js
+- Express.js
+- REST APIs
+- JWT Authentication
+- bcryptjs
+- Google OAuth / Google Identity Services
+- Stripe API
+
+### Database
+
+- PostgreSQL
+- SQL
+- pgAdmin 4
+
+### Development Tools
+
+- Visual Studio Code
+- Postman
+- Git
+- GitHub
+- PowerShell
+
+---
+
+## 🏗️ Application Architecture
+
+EventHub follows a client-server architecture.
+
+```text
+                 ┌──────────────────────┐
+                 │      React / Vite    │
+                 │      Frontend        │
+                 └──────────┬───────────┘
+                            │
+                       HTTP / REST
+                            │
+                            ▼
+                 ┌──────────────────────┐
+                 │   Node.js / Express  │
+                 │      Backend API     │
+                 └───────┬───────┬──────┘
+                         │       │
+                ┌────────┘       └─────────┐
+                ▼                          ▼
+       ┌─────────────────┐       ┌─────────────────┐
+       │   PostgreSQL    │       │     Stripe      │
+       │    Database     │       │   Payments      │
+       └─────────────────┘       └─────────────────┘
