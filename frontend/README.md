@@ -30,21 +30,18 @@ The application uses ownership-based authorization so users can manage their own
 
 ## 📸 Application Screenshots
 
-### Event Discovery
 
-![EventHub Events Page](screenshots/events-page.png)
 
-### Event Details
+![EventHub Events Page](screenshots\eventPage1.png)
+![EventHub Events Page](screenshots\eventPage2.png)
+![EventHub Events Page](screenshots\login.png)
+![EventHub Events Page](screenshots\MyBooking.png)
+![EventHub Events Page](screenshots\organizerDashboard.png)
+![EventHub Events Page](screenshots\registerPage.png)
+![EventHub Events Page](screenshots\StripPayment.png)
+![EventHub Events Page](screenshots\StripPaymentConfirmation.png)
+![EventHub Events Page](screenshots\ViewEvent.png)
 
-![EventHub Event Details](screenshots/event-details.png)
-
-### My Events
-
-![EventHub My Events](screenshots/my-events.png)
-
-### Shopping Cart
-
-![EventHub Shopping Cart](screenshots/shopping-cart.png)
 
 ## 🎯 Project Goals
 
