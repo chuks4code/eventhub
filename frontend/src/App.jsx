@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useCart } from "./CartContext.jsx";
 
 // Import React Router components
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Link, Navigate, Route, Routes } from "react-router-dom";
 
 // Import page components
 import Home from "./pages/Home";
@@ -89,13 +89,23 @@ function App() {
                         {/* Only show Login and Register when the user is logged out */}
                         {!isLoggedIn && (
                             <>
-                                <Link to="/login">
+                                <NavLink
+                                    to="/login"
+                                    className={({ isActive }) =>
+                                        isActive ? "auth-nav-active" : "auth-nav-link"
+                                    }
+                                >
                                     Login
-                                </Link>
+                                </NavLink>
 
-                                <Link to="/register">
+                                <NavLink
+                                    to="/register"
+                                    className={({ isActive }) =>
+                                        isActive ? "auth-nav-active" : "auth-nav-link"
+                                    }
+                                >
                                     Register
-                                </Link>
+                                </NavLink>
                             </>
                         )}
 

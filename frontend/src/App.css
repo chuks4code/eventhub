@@ -52,57 +52,75 @@ button {
     color: #333;
 }
 
-/* Style the Login navigation link */
-.nav-links a:nth-child(2) {
-    padding: 10px 18px;
-}
-
-/* Style the Register navigation link */
-.nav-links a:nth-child(3) {
-    background: #5b3df5;
-    color: white;
-    padding: 10px 18px;
-    border-radius: 6px;
-}
-
-
-
-/* =========================
-   HERO
-========================= */
+/* ==========================
+   HERO SECTION
+========================== */
 
 .hero {
+    min-height: 340px;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    text-align: center;
+
+    /* Softer purple instead of the strong blue/purple */
     background: linear-gradient(
         135deg,
-        #5b3df5,
-        #7c5cff
+        #8985ad,
+        #8b7cf6
     );
 
-    color: white;
-    padding: 100px 8%;
+    padding: 40px 20px;
+    box-sizing: border-box;
 }
 
-.hero-content {
-    max-width: 700px;
-}
-
+/* Hero heading */
 .hero h1 {
-    font-size: 52px;
-    margin-bottom: 20px;
+    margin: 0 0 10px;
+
+    font-size: 46px;
+    font-weight: 500;
+
+    text-align: center;
 }
 
+/* Hero description */
 .hero p {
-    font-size: 19px;
-    line-height: 1.6;
-    margin-bottom: 30px;
+    margin: 0 0 28px;
+
+    font-size: 18px;
+    color: #ffffff;
+
+    text-align: center;
 }
 
-.hero-btn {
-    background: white;
-    color: #5b3df5;
-    padding: 13px 24px;
+/* Explore button */
+.hero a,
+.hero button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 12px 24px;
+
+    background: #ffffff;
+    color: #5b4ae8;
+
+    border: none;
     border-radius: 6px;
-    font-weight: bold;
+
+    font-weight: 600;
+    text-decoration: none;
+
+    cursor: pointer;
+}
+
+.hero a:hover,
+.hero button:hover {
+    opacity: 0.9;
 }
 
 /* =========================
@@ -1135,4 +1153,25 @@ footer {
 /* Click effect */
 .delete-event-btn:active {
     transform: scale(0.94);
+}
+
+/* ==========================
+   LOGIN / REGISTER NAV LINKS
+========================== */
+
+/* Normal Login/Register link */
+.auth-nav-link {
+    padding: 10px 16px;
+    text-decoration: none;
+    color: #111;
+    border-radius: 6px;
+}
+
+/* Currently active page */
+.auth-nav-active {
+    padding: 10px 16px;
+    text-decoration: none;
+    color: white;
+    background: #6d5dfc;
+    border-radius: 6px;
 }
